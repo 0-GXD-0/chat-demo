@@ -1,5 +1,7 @@
 package main
 
-func main() {
+import "chat/conf"
 
+func main() {
+	conf.Init()
 }
