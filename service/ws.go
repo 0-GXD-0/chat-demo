@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -29,6 +30,7 @@ type Client struct {
 	SendID string
 	Socket *websocket.Conn
 	Send   chan []byte
+	mu     sync.Mutex //添加互斥锁
 }
 
 type Broadcast struct {

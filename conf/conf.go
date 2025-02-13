@@ -63,10 +63,18 @@ func LoadMySQL(file *ini.File) {
 }
 
 func LoadMongoDB(file *ini.File) {
-	MongoDBName = file.Section("mongodb").Key("MongoDBName").String()
-	MongoDBAddr = file.Section("mongodb").Key("MongoDBAddr").String()
-	MongoDBPwd = file.Section("mongodb").Key("MongoDBPwd").String()
-	MongoDBPort = file.Section("mongodb").Key("MongoDBPort").String()
+	logging.Info("Loading MongoDB configuration")
+	logging.Info("MongoDBName from config file:", file.Section("MongoDB").Key("MongoDBName").String())
+	logging.Info("MongoDBAddr from config file:", file.Section("MongoDB").Key("MongoDBAddr").String())
+	logging.Info("MongoDBPwd from config file:", file.Section("MongoDB").Key("MongoDBPwd").String())
+	logging.Info("MongoDBPort from config file:", file.Section("MongoDB").Key("MongoDBPort").String())
+
+	MongoDBName = file.Section("MongoDB").Key("MongoDBName").String()
+	logging.Info("MongoDBName:", MongoDBName)
+	MongoDBAddr = file.Section("MongoDB").Key("MongoDBAddr").String()
+	MongoDBPwd = file.Section("MongoDB").Key("MongoDBPwd").String()
+	MongoDBPort = file.Section("MongoDB").Key("MongoDBPort").String()
+
 }
 
 func MongoDB() {
