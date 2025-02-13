@@ -1,6 +1,8 @@
 package router
 
 import (
+	"chat/api"
+
 	"github.com/gin-gonic/gin"
 )
 
