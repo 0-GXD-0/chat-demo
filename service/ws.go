@@ -1,6 +1,10 @@
 package service
 
 import (
+	"chat/cache"
+	"chat/pkg/e"
+	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -60,7 +64,7 @@ func CreateID(uid, toUid string) string {
 }
 
 func Handler(c *gin.Context) {
-	uid := c.Query("id")
+	uid := c.Query("uid")
 	toUid := c.Query("toUid")
 	conn, err := (&websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -83,6 +87,65 @@ func Handler(c *gin.Context) {
 	go client.Write()
 }
 
-func (c *Client) Read() {}
+func (c *Client) Read() {
+	defer func() {
+		Manager.Unregister <- c
+		c.Socket.Close()
+	}()
+	for {
+		c.Socket.PongHandler()
+		sendMsg := new(SendMsg)
 
-func (c *Client) Write() {}
+		err := c.Socket.ReadJSON(sendMsg)
+		if err != nil {
+			fmt.Println("数据格式不正确", err)
+			Manager.Unregister <- c
+			c.Socket.Close()
+			break
+		}
+		if sendMsg.Type == 1 {
+			//发送消息
+			r1, _ := cache.RedisClient.Get(c.ID).Result()
+			r2, _ := cache.RedisClient.Get(c.SendID).Result()
+			if r1 > "3" && r2 == "" {
+				//1给2发消息，但是2没有回，或没有看到，就停止1发送
+				replyMsg := ReplyMsg{
+					Code:    e.WebsocketLimit,
+					Content: "达到限制",
+				}
+				msg, _ := json.Marshal(replyMsg) //序列化
+				_ = c.Socket.WriteMessage(websocket.TextMessage, msg)
+				continue
+			}
+		} else {
+			cache.RedisClient.Incr(c.ID)
+			_, _ = cache.RedisClient.Expire(c.ID, month).Result()
+		}
+		//传到广播
+		Manager.Broadcast <- &Broadcast{
+			Client:  c,
+			Message: []byte(sendMsg.Content),
+		}
+	}
+}
+
+func (c *Client) Write() {
+	defer func() {
+		c.Socket.Close()
+	}()
+	for {
+		select {
+		case message, ok := <-c.Send:
+			if !ok {
+				c.Socket.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			replyMsg := ReplyMsg{
+				Code:    e.WebsocketSuccessMessage,
+				Content: fmt.Sprintf("%s", message),
+			}
+			msg, _ := json.Marshal(replyMsg) //序列化
+			_ = c.Socket.WriteMessage(websocket.TextMessage, msg)
+		}
+	}
+}
