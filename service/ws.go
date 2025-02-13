@@ -2,10 +2,13 @@ package service
 
 import (
 	"chat/cache"
+	"chat/conf"
 	"chat/pkg/e"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -116,17 +119,54 @@ func (c *Client) Read() {
 					Content: "达到限制",
 				}
 				msg, _ := json.Marshal(replyMsg) //序列化
+				c.mu.Lock()                      // 加锁
 				_ = c.Socket.WriteMessage(websocket.TextMessage, msg)
+				c.mu.Unlock() // 解锁
+				continue
+			} else {
+				cache.RedisClient.Incr(c.ID)
+				_, _ = cache.RedisClient.Expire(c.ID, month).Result()
+			}
+			//传到广播
+			Manager.Broadcast <- &Broadcast{
+				Client:  c,
+				Message: []byte(sendMsg.Content),
+			}
+		} else if sendMsg.Type == 2 {
+			//获取历史消息
+			timeT, err := strconv.Atoi(sendMsg.Content)
+			if err != nil {
+				timeT = 999999999999999999
+			}
+			results, err := FindMany(conf.MongoDBName, c.SendID, c.ID, int64(timeT), 10) //查询10条
+			log.Printf("查询到的历史消息数量: %d", len(results))
+			if err != nil {
+				fmt.Println("查询历史消息失败:", err)
 				continue
 			}
-		} else {
-			cache.RedisClient.Incr(c.ID)
-			_, _ = cache.RedisClient.Expire(c.ID, month).Result()
-		}
-		//传到广播
-		Manager.Broadcast <- &Broadcast{
-			Client:  c,
-			Message: []byte(sendMsg.Content),
+			if len(results) > 10 {
+				results = results[:10]
+			} else if len(results) == 0 {
+				replyMsg := ReplyMsg{
+					Code:    e.WebsocketEnd,
+					Content: "到底了",
+				}
+				msg, _ := json.Marshal(replyMsg) //序列化
+				c.mu.Lock()                      // 加锁
+				_ = c.Socket.WriteMessage(websocket.TextMessage, msg)
+				c.mu.Unlock() // 解锁
+				continue
+			}
+			for _, result := range results {
+				replyMsg := ReplyMsg{
+					From:    result.From,
+					Content: result.Msg,
+				}
+				msg, _ := json.Marshal(replyMsg) //序列化
+				c.mu.Lock()                      // 加锁
+				_ = c.Socket.WriteMessage(websocket.TextMessage, msg)
+				c.mu.Unlock() // 解锁
+			}
 		}
 	}
 }
@@ -147,7 +187,9 @@ func (c *Client) Write() {
 				Content: fmt.Sprintf("%s", message),
 			}
 			msg, _ := json.Marshal(replyMsg) //序列化
+			c.mu.Lock()                      // 加锁
 			_ = c.Socket.WriteMessage(websocket.TextMessage, msg)
+			c.mu.Unlock() // 解锁
 		}
 	}
 }
